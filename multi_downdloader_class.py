@@ -132,7 +132,8 @@ class ImageDownloader():
 
 
 if __name__ == '__main__':
-    imdow = ImageDownloader('product_allegro_back2', 300)
+    
+    imdow = ImageDownloader('product_allegro_back2', 100000)
     num = imdow.do_translate_job()
     #imdow.db.close()
     print(f'Connection Closed inserted {num}')
