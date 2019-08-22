@@ -10,6 +10,8 @@ from random import shuffle
 import configparser
 import multiprocessing 
 from multiprocessing import Pool
+from pathlib import Path
+
 
 config = configparser.ConfigParser()
 config.read('config.cnf')
@@ -19,6 +21,7 @@ password = config['DEFAULT']['password']
 database = config['DEFAULT']['database']
 db = MySQLdb.connect(host, user, password, database)
 db.set_character_set('utf8')
+
 class ImageDownloader():
 
     num = 0
@@ -27,27 +30,28 @@ class ImageDownloader():
     
     #cursor = db.cursor()
     
-    def __init__(self, table = 'product_allegro_back2',limit=100, *args):
-        self.table = table
-        self.limit = limit
-        self.proxy_count = self.proxy_count()//3
+    def __init__(self, **kwargs):
+        self.table = kwargs['table']
+        self.limit = kwargs['limit']
+        self.img_format = kwargs['img_format']
+        self.working_path = kwargs['working_path']
+        self.img_size = kwargs['img_size']
 
     def proxy_count(self):
-        with open('proxy.txt', 'r') as f:
+        with open('proxy.csv', 'r') as f:
             reader = csv.reader(f)
             proxy_list = list(reader)
             return len(proxy_list)
 
-    def apart_urls(self, pk, string):
+    def apart_urls(self, string):
         array = string.lstrip(',').split(',')
         array = [ x.strip() for x in array ]
-        return([pk, array])
+        return(array)
 
     def iter_row(self, size):
         cursor = db.cursor()
         #Getting data from table to translate
-        q = f'SELECT id, subcat_id  FROM {self.table} WHERE (subsubcat_id = "" OR subsubcat_id ="None" OR\
-                LENGTH(subsubcat_id) < 5) AND LENGTH(subcat_id) > 5  LIMIT 0,{self.limit}'
+        q = f'SELECT id, img  FROM {self.table} WHERE img !=""  AND img_check != 1 LIMIT 0,{self.limit}'
         cursor.execute(q)
         while True:
             rows = cursor.fetchmany(size)
@@ -56,7 +60,7 @@ class ImageDownloader():
             yield (rows)
 
     def proxy_list(self):            
-        with open('proxy.txt', 'r') as f:
+        with open('proxy1.csv', 'r') as f:
             reader = csv.reader(f)
             proxy_list = list(reader)
             self.proxy_count = len(proxy_list)
@@ -72,75 +76,69 @@ class ImageDownloader():
             for ua in user_agents:
                 yield ua[0]
 
-    def do_image_job(self):
-        proxy = next(self.proxy_list())
-        user_agent = next(self.user_agent())
-        for i, row in enumerate(self.iter_row(50)):
-            print(row, i)
-
-    def do_translate_job(self, rows_list):
-        #iter_rows Выбирает из бд количество строк и выдает их по пучку в каждый процесс
-        with progressbar.ProgressBar(max_value=self.limit) as bar:    
-            for i, row in enumerate(rows_list): #Задаем количество строк в банче
-                self.translator(rows_list)
-                bar.update(i)
-        return(self.num)
-        
-    def translator(self, trans_list):
-
+    def do_image_job(self, chunk):
         db = MySQLdb.connect(host, user, password, database)
         db.set_character_set('utf8')
         cursor = db.cursor()
-        proxy = next(self.proxy_list())
         user_agent = next(self.user_agent())
-        url = 'https://www.webtran.ru/gtranslate/'
-        with progressbar.ProgressBar(max_value=len(trans_list)) as bar:
-            for i, r in enumerate(trans_list):
-                data = {'text': r[1],
-                        'gfrom': 'pl',
-                        'gto': 'ru',
-                        'key': '781687649ru2419'
-               }
-                headers = {'User-Agent': user_agent}
-                try:
-                    response = requests.post(url, data=data, headers=headers,timeout=10, proxies={'http': proxy, 'https': proxy})
-                    time.sleep(4)
-
-                    if len(response.text)>5:
-                        text = response.text
-                    else:
-                        text = 'None'
-
-                    qu = f'UPDATE {self.table} SET subsubcat_id = %s WHERE id = %s'
-                    cursor.execute(qu, (text, r[0]))
-                    if cursor.rowcount == 0:
-                        print('Not inserted')
-                    else:
-                        self.num += cursor.rowcount
-                    #print(response.text)
-                except Exception as e:
-                    print(e)
-                    time.sleep(5)
-                    proxy = next(self.proxy_list())
-                    user_agent = next(self.proxy_list())
-                bar.update(i)         
-            db.commit()
-            cursor.close()
-            db.close()
+        p_l = self.proxy_list()
+        proxy = next(p_l)
+        proxies = {'http': proxy, 'https': proxy}
+        headers = {'User-Agent': user_agent}
+        with progressbar.ProgressBar(max_value=len(chunk)) as bar:
+            for b, row in enumerate(chunk):
+                pk, urls = row[0], self.apart_urls(row[1])
+                directory = os.path.join(self.working_path, str(pk))
+                if not os.path.exists(directory):
+                    os.makedirs(directory)
+                for i, url in enumerate(urls):
+                    if '-Typ-' not in url:
+                        file_name = str(i) + '.' + self.img_format
+                        uri = re.sub(r's128', 's{}'.format(self.img_size), url)
+                        code = False
+                        while not code: 
+                            try:
+                                r = requests.get(uri, headers=headers, timeout=10)
+                                file_name = os.path.join(self.working_path, directory, file_name)
+                                with open(file_name, 'wb') as f:
+                                    f.write(r.content)
+                                    time.sleep(0.5)
+                                #here update mage_check
+                                qu = f'UPDATE {self.table} SET img_check = %s WHERE id = %s'
+                                cursor.execute(qu, (1, pk))
+                                db.commit()
+                                if r.status_code == 200:
+                                    code = True
+                                    time.sleep(0.3)
+                                else:
+                                    try:
+                                        proxy = next(p_l)
+                                    except StopIteration:
+                                        p_l = self.proxy_list()
+                                        proxy = next(p_l)
+                                        
+                            except Exception as e:
+                                print(e)
+                                proxy = next(p_l)
+                bar.update(b) 
+        
+        cursor.close()
+        db.close()
 
 def do_all():
-    limit = 800000
-    processes = 40
-    chunk = limit // processes
+   #Здесь нужно задать настройки для загрузки фотографий
 
-    imdow = ImageDownloader('product_allegro_back2', limit)
+    table = 'product_allegro_spec' #Задаем таблицу из которой выбираем урлы и записываем img_check = 1 
+    limit = 10 # Лимит выборки из бд, если нужно выбрать все, то ставим лимит больше чем строк в таблице
+    img_format = 'webp' #Формат изображения с которым работаем
+    img_size = 900 #Размер картинки которую будем скачивать(работает только с аллегро, остальные надо смотреть урлы)
+    processes = 4 #Количество процессов которые будут парстить
+    
+    chunk = limit // processes
+    working_path = os.path.join(str(Path.home()),'tmp', 'img_down')
+    imdow = ImageDownloader(table=table, limit=limit, img_format=img_format, working_path=working_path,img_size=img_size)
     with Pool(processes) as p:
-        var = p.map(imdow.translator, imdow.iter_row(chunk) )
-#    with progressbar.ProgressBar(max_value=10) as bar:
-#        for i, row in enumerate(imdow.iter_row(10)):
-#            p = multiprocessing.Process(target=imdow.translator, args=(row,))
-#            p.start()
-#            bar.update(i)
+        var = p.map(imdow.do_image_job, imdow.iter_row(chunk) )
         p.close()
         p.join()
     db.close()
