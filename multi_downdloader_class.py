@@ -33,7 +33,7 @@ class ImageDownloader():
         self.proxy_count = self.proxy_count()//3
 
     def proxy_count(self):
-        with open('proxy1.csv', 'r') as f:
+        with open('proxy.csv', 'r') as f:
             reader = csv.reader(f)
             proxy_list = list(reader)
             return len(proxy_list)
@@ -47,7 +47,7 @@ class ImageDownloader():
         cursor = db.cursor()
         #Getting data from table to translate
         q = f'SELECT id, subcat_id  FROM {self.table} WHERE (subsubcat_id = "" OR subsubcat_id ="None" OR\
-                LENGTH(subsubcat_id) < 5) AND LENGTH(subcat_id) > 5  LIMIT 200000,{self.limit}'
+                LENGTH(subsubcat_id) < 5) AND LENGTH(subcat_id) > 5  LIMIT 0,{self.limit}'
         cursor.execute(q)
         while True:
             rows = cursor.fetchmany(size)
@@ -56,7 +56,7 @@ class ImageDownloader():
             yield (rows)
 
     def proxy_list(self):            
-        with open('proxy1.csv', 'r') as f:
+        with open('proxy.csv', 'r') as f:
             reader = csv.reader(f)
             proxy_list = list(reader)
             self.proxy_count = len(proxy_list)
@@ -129,8 +129,8 @@ class ImageDownloader():
             db.close()
 
 def do_all():
-    limit = 100000
-    processes = 40
+    limit = 400000
+    processes = 50
     chunk = limit // processes
 
     imdow = ImageDownloader('product_allegro_back2', limit)

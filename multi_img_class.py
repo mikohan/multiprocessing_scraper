@@ -106,6 +106,8 @@ class ImageDownloader():
                                 #here update mage_check
                                 qu = f'UPDATE {self.table} SET img_check = %s WHERE id = %s'
                                 cursor.execute(qu, (1, pk))
+                                #if cursor.rowcount == 0:
+                                #    print('Not inserted')
                                 db.commit()
                                 if r.status_code == 200:
                                     code = True
