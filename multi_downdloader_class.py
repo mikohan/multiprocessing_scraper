@@ -48,8 +48,8 @@ class ImageDownloader():
         db_iter.set_character_set('utf8')
         cursor_iter = db_iter.cursor()
         #Getting data from table to translate
-        q = f'SELECT id, subcat_id  FROM {self.table} WHERE (subsubcat_id = "" OR subsubcat_id ="None" OR\
-                LENGTH(subsubcat_id) < 5) AND LENGTH(subcat_id) > 5  LIMIT 0,{self.limit}'
+        q = f'SELECT id, subcat_id  FROM {self.table} WHERE subsubcat_id IS NULL OR subsubcat_id ="None" OR \
+        LENGTH(subsubcat_id) < 5 LIMIT 0,{self.limit}'
         cursor_iter.execute(q)
         while True:
             rows = cursor_iter.fetchmany(size)
@@ -137,11 +137,11 @@ class ImageDownloader():
         return not_inserted
 def do_all():
 
-    limit = 100000
+    limit = 800000
     processes = 50
     table = 'product_allegro_back2' 
-    q = f'SELECT COUNT(id) FROM {table} WHERE (subsubcat_id = "" OR subsubcat_id ="None" OR\
- LENGTH(subsubcat_id) < 5) AND LENGTH(subcat_id) > 5  LIMIT 0,{limit}'
+    q = f'SELECT COUNT(id) FROM {table} WHERE subsubcat_id IS NULL OR subsubcat_id ="None" OR\
+ LENGTH(subsubcat_id) < 5  LIMIT 0,{limit}'
     db2 = MySQLdb.connect(host, user, password, database)
     cursor2 = db2.cursor() 
     cursor2.execute(q)
@@ -162,11 +162,11 @@ def do_all():
 #            bar.update(i)
         p.close()
         p.join()
-    #db.close()
+    db2.close()
     print(f'Connection Closed', imdow.num) 
     print("Not inserted:", var)
 if __name__ == '__main__':
     t1 = time.time()
     do_all() 
     t2 = time.time()
-    print("Total tim :", (t2 - t1)/60, 'Minutes')
+    print("Total execution time :", (t2 - t1)/60, 'Minutes')
